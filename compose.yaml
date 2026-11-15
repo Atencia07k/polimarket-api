@@ -1,0 +1,28 @@
+name: polimarket
+
+services:
+  postgres:
+    image: postgres:18.7
+    container_name: polimarket-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-polimarket_db}
+      POSTGRES_USER: ${POSTGRES_USER:-polimarket}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD en el archivo .env}
+    ports:
+      # Solo accesible desde el propio equipo
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18+: la imagen oficial usa PGDATA=/var/lib/postgresql/18/docker,
+      # por lo que el volumen se monta en /var/lib/postgresql
+      - polimarket_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  polimarket_postgres_data:
+    name: polimarket_postgres_data
