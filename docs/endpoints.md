@@ -143,40 +143,40 @@ $login = Invoke-RestMethod -Method Post "$api/auth/login" -ContentType "applicat
 $PSDefaultParameterValues["Invoke-RestMethod:Headers"] = @{ Authorization = "Bearer $($login.accessToken)" }
 # El access token expira en 15 min: renovar con POST $api/auth/refresh y {"refreshToken":"..."}
 
-# 1. RRHH autoriza al vendedor 1  -> 201
-Invoke-RestMethod -Method Post "$api/autorizaciones" -ContentType "application/json" -Body '{"idVendedor":1}'
+# 1. RRHH autoriza a la vendedora 4 (sin autorizacion en las semillas) -> 201
+Invoke-RestMethod -Method Post "$api/autorizaciones" -ContentType "application/json" -Body '{"idVendedor":4}'
 ```
 
 ```json
-{ "id": 1, "idVendedor": 1, "estado": "AUTORIZADA", "fecha": "2026-11-14" }
+{ "id": 5, "idVendedor": 4, "estado": "AUTORIZADA", "fecha": "2026-11-14" }
 ```
 
 ```powershell
-# 2. Registrar venta -> 201, Location: /api/v1/ventas/1 (no descuenta stock)
+# 2. Registrar venta -> 201, Location: /api/v1/ventas/6 (no descuenta stock)
 Invoke-RestMethod -Method Post "$api/ventas" -ContentType "application/json" `
-  -Body '{"idVendedor":1,"idCliente":1,"items":[{"idProducto":1,"cantidad":3}]}'
+  -Body '{"idVendedor":4,"idCliente":1,"items":[{"idProducto":1,"cantidad":3}]}'
 ```
 
 ```json
 {
-  "id": 1, "fecha": "2026-11-14", "estado": "REGISTRADA", "total": 9000.0,
-  "idVendedor": 1, "nombreVendedor": "Luis", "idCliente": 1, "nombreCliente": "Ana",
-  "detalles": [ { "idProducto": 1, "nombreProducto": "Arroz", "cantidad": 3, "precio": 3000.0, "subtotal": 9000.0 } ]
+  "id": 6, "fecha": "2026-11-14", "estado": "REGISTRADA", "total": 10500.0,
+  "idVendedor": 4, "nombreVendedor": "Laura Martinez", "idCliente": 1, "nombreCliente": "Ana Torres",
+  "detalles": [ { "idProducto": 1, "nombreProducto": "Arroz 1 kg", "cantidad": 3, "precio": 3500.0, "subtotal": 10500.0 } ]
 }
 ```
 
 ```powershell
-# 3. Registrar entrega -> 201 (PENDIENTE)
-Invoke-RestMethod -Method Post "$api/entregas" -ContentType "application/json" -Body '{"idVenta":1,"direccion":"Carrera 7"}'
+# 3. Registrar entrega -> 201 (PENDIENTE, id 3)
+Invoke-RestMethod -Method Post "$api/entregas" -ContentType "application/json" -Body '{"idVenta":6,"direccion":"Calle 10 # 5-20, Bogota"}'
 
 # 4. Confirmar entrega desde la bodega 1 -> 200 (ENTREGADA, descuenta 3 unidades y crea un movimiento SALIDA)
-Invoke-RestMethod -Method Patch "$api/entregas/1/confirmacion" -ContentType "application/json" -Body '{"idBodega":1}'
+Invoke-RestMethod -Method Patch "$api/entregas/3/confirmacion" -ContentType "application/json" -Body '{"idBodega":1}'
 # Repetir la confirmacion -> 409 operacion-no-permitida (el stock no se descuenta dos veces)
 
-# 5. Compra a proveedor y recepcion -> 201 PENDIENTE, luego 200 RECIBIDA (+5 unidades, movimiento ENTRADA)
+# 5. Compra a proveedor y recepcion -> 201 PENDIENTE (id 5), luego 200 RECIBIDA (+5 unidades, movimiento ENTRADA)
 Invoke-RestMethod -Method Post "$api/compras" -ContentType "application/json" `
-  -Body '{"nitProveedor":"900","items":[{"idProducto":1,"cantidad":5,"precio":2500.0}]}'
-Invoke-RestMethod -Method Patch "$api/compras/1/recepcion" -ContentType "application/json" -Body '{"idBodega":1}'
+  -Body '{"nitProveedor":"900123456-7","items":[{"idProducto":1,"cantidad":5,"precio":2500.0}]}'
+Invoke-RestMethod -Method Patch "$api/compras/5/recepcion" -ContentType "application/json" -Body '{"idBodega":1}'
 
 # 6. Consultas
 Invoke-RestMethod "$api/inventarios/stock?productoId=1&bodegaId=1"
@@ -184,24 +184,29 @@ Invoke-RestMethod "$api/movimientos-stock?tipo=SALIDA"
 Invoke-RestMethod "$api/entregas?estado=ENTREGADA"
 ```
 
-## Datos de ejemplo para pruebas manuales (pendiente de aprobación)
+## Datos semilla (perfil `dev`)
 
-La base de desarrollo `polimarket_db` está **vacía** y la API no tiene endpoints para crear vendedores, clientes, productos, bodegas, proveedores ni registros de inventario. Para probar los flujos de escritura manualmente se propone el siguiente script; **no se ha ejecutado** y solo debe aplicarse con aprobación explícita:
+Con el perfil `dev`, Flyway carga además `src/main/resources/db/seed/R__datos_semilla.sql` (migración *repetible*), así que cualquiera que clone el proyecto y cree la base tiene datos mínimos para probar todos los endpoints. Es idempotente (IDs explícitos con `ON CONFLICT DO NOTHING`), no modifica datos existentes, **no crea usuarios** (el administrador sale de `.env`) y no se carga en las pruebas ni fuera de `dev`.
 
-```sql
-BEGIN;
-INSERT INTO vendedor (nombre) VALUES ('Luis Vendedor');
-INSERT INTO cliente (nombre, direccion) VALUES ('Ana Cliente', 'Calle 1 # 2-3');
-INSERT INTO proveedor (nit, nombre, contacto) VALUES ('900123456-7', 'Distribuidora Andina', 'ventas@andina.co');
-INSERT INTO producto (nombre, precio) VALUES ('Arroz 1 kg', 3000);
-INSERT INTO producto_proveedor (producto_id, proveedor_nit)
-  SELECT id, '900123456-7' FROM producto WHERE nombre = 'Arroz 1 kg';
-INSERT INTO bodega (ubicacion) VALUES ('Bogota Centro');
-INSERT INTO inventario (producto_id, bodega_id, stock, stock_minimo)
-  SELECT p.id, b.id, 10, 2 FROM producto p, bodega b WHERE p.nombre = 'Arroz 1 kg' AND b.ubicacion = 'Bogota Centro';
-COMMIT;
+| Datos | Contenido y escenarios cubiertos |
+|---|---|
+| Vendedores | 1 Luis Gomez y 2 Maria Rodriguez (**autorizados**), 3 Carlos Perez (autorizado y luego **revocado** → venta 409), 4 Laura Martinez (**sin autorización** → para probar `POST /autorizaciones`) |
+| Clientes | 1 a 5 (Bogotá, Medellín, Cali) |
+| Proveedores | `900123456-7` Distribuidora Andina, `800987654-3` Lacteos del Valle, `901555222-1` Aseo Total |
+| Productos | 1 Arroz, 2 Aceite, 3 Azucar, 4 Cafe (Andina); 5 Leche, 6 Queso (Valle); 7 Detergente (Aseo); 8 Jabon (Aseo y Andina) |
+| Bodegas | 1 Bogota - Centro, 2 Medellin - Belen, 3 Cali - Norte |
+| Inventario | 10 registros; los inventarios **3, 6 y 8 están bajo el mínimo** (`GET /inventarios/reposicion`) |
+| Compras | 1 RECIBIDA (con movimientos ENTRADA), 2 y 4 **PENDIENTE** (recibir / cancelar), 3 CANCELADA |
+| Ventas | 1 a 3 y 5 REGISTRADA, 4 CANCELADA; la venta 5 no tiene entrega (se puede cancelar) y la 3 permite registrar entrega |
+| Entregas | 1 ENTREGADA (venta 1, con movimientos SALIDA), 2 **PENDIENTE** (venta 2, confirmar desde la bodega 1) |
+
+Para **restaurar las semillas** tras pruebas manuales (borra los datos de negocio, conserva usuarios):
+
+```powershell
+"TRUNCATE vendedor, autorizacion_rrhh, cliente, proveedor, producto, producto_proveedor, bodega, inventario, compra_proveedor, detalle_compra, venta, detalle_venta, entrega, movimiento_stock RESTART IDENTITY CASCADE; DELETE FROM flyway_schema_history WHERE version IS NULL;" | docker exec -i polimarket-postgres sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB'
 ```
 
+y reiniciar la API con el perfil `dev`. Si modifica el script de semillas, Flyway lo vuelve a ejecutar en el siguiente arranque (solo inserta lo que falte).
 ## Pendientes
 
 - **Listados sin filtro** de ventas, entregas y compras: los servicios aprobados solo ofrecen consultas filtradas, por lo que `GET /ventas`, `GET /entregas` y `GET /compras` exigen un filtro. Agregar `listarVentas()`, `listarEntregas()` y `listarCompras()` requiere autorizar cambios en la capa service.

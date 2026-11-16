@@ -30,9 +30,27 @@ git switch develop        # rama de trabajo (master es la rama principal/estable
 
 > Recomendación: clone en una ruta corta y fuera de OneDrive (por ejemplo `C:\dev\polimarket-api`) para evitar bloqueos de archivos durante la compilación.
 
-### 3. Crear el archivo `.env` con las credenciales locales
+### 3. Copiar los archivos de configuración que no están en el repositorio
 
-El archivo `.env` **no está en el repositorio** (está en `.gitignore`); cada desarrollador crea el suyo a partir de la plantilla `.env.example`:
+Por seguridad, estos archivos **no están en GitHub** (están en `.gitignore`):
+
+| Archivo / carpeta | Contenido |
+|---|---|
+| `.env` | Credenciales de PostgreSQL, primer administrador (`ADMIN_USERNAME`/`ADMIN_PASSWORD`) y ubicación de las llaves JWT |
+| `secrets/jwt-private.pem` | Llave privada RSA que **firma** los tokens JWT |
+| `secrets/jwt-public.pem` | Llave pública RSA que **valida** los tokens JWT |
+
+**Integrantes del equipo:** estos archivos **ya se les compartieron** por un canal privado en el paquete **`polimarket-api-config-local.zip`**. Descomprímalo en la **raíz del proyecto** (la carpeta que contiene `build.gradle`) y verifique:
+
+```powershell
+Expand-Archive ..\polimarket-api-config-local.zip -DestinationPath . -Force   # ajuste la ruta del .zip
+Test-Path .env, secrets\jwt-private.pem, secrets\jwt-public.pem              # debe imprimir True True True
+git status --short                                                            # no debe listar .env ni secrets/
+```
+
+Con el paquete, el `.env` ya trae la contraseña de PostgreSQL, el administrador inicial y las llaves: **continúe en el paso 4** (en el paso 5 no necesita generar el administrador; las credenciales para iniciar sesión están en `ADMIN_USERNAME`/`ADMIN_PASSWORD` del `.env`). Nunca suba el `.zip` ni su contenido a un repositorio ni lo comparta por canales públicos.
+
+**Sin el paquete (equipo nuevo o externo):** cree su propio `.env` a partir de la plantilla `.env.example` como se indica a continuación, y opcionalmente sus llaves en `secrets/` ([Llaves RSA](#llaves-rsa-para-firmar-los-tokens)):
 
 ```powershell
 Copy-Item .env.example .env
@@ -55,7 +73,7 @@ La base `polimarket_db` y el usuario `polimarket` se crean automáticamente la p
 
 **Las tablas se crean solas**: al arrancar, Flyway aplica las migraciones de `src/main/resources/db/migration` (`V1__esquema_inicial.sql`: 14 tablas del negocio; `V2__seguridad_usuarios.sql`: `usuario` y `refresh_token`) y Hibernate solo **valida** que las entidades coincidan (`ddl-auto=validate`). Si la base ya tenía las 14 tablas de una versión anterior, Flyway la marca como versión 1 (*baseline*) y aplica solo la V2.
 
-Todos los endpoints de negocio exigen un token, así que defina en `.env` las credenciales del **primer administrador** (se crea al arrancar solo si no existe ningún `ADMIN` activo; después puede borrar estas dos líneas):
+Todos los endpoints de negocio exigen un token. Si usó el paquete compartido del paso 3, el administrador ya está definido en `.env`; si no, defina en `.env` las credenciales del **primer administrador** (se crea al arrancar solo si no existe ningún `ADMIN` activo; después puede borrar estas dos líneas):
 
 ```powershell
 $adminPass = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 20 | ForEach-Object { [char]$_ })
@@ -72,6 +90,8 @@ Tras el primer arranque (paso 7) puede verificar el esquema:
 ```
 
 Deben listarse 17 tablas: las 14 del negocio, `usuario`, `refresh_token` y `flyway_schema_history`.
+
+**Datos semilla:** con el perfil `dev` Flyway también carga `src/main/resources/db/seed/R__datos_semilla.sql` (4 vendedores, 5 clientes, 3 proveedores, 8 productos, 3 bodegas con inventario, compras, ventas, entregas y movimientos), de modo que la API tiene datos para probar desde el primer arranque. Es idempotente, no crea usuarios y no se carga en las pruebas ni fuera de `dev`. Detalle de los datos y cómo restaurarlos: [`docs/endpoints.md`](docs/endpoints.md#datos-semilla-perfil-dev).
 
 ### 6. Compilar y ejecutar las pruebas
 
@@ -102,7 +122,7 @@ $login = Invoke-RestMethod http://127.0.0.1:8080/api/v1/auth/login -Method Post 
     -Body (@{ username = 'admin'; password = '<ADMIN_PASSWORD de su .env>' } | ConvertTo-Json)
 $auth = @{ Authorization = "Bearer $($login.accessToken)" }
 Invoke-RestMethod http://127.0.0.1:8080/api/v1/auth/me -Headers $auth          # datos del usuario autenticado
-Invoke-RestMethod http://127.0.0.1:8080/api/v1/clientes -Headers $auth         # [] mientras no existan datos
+Invoke-RestMethod http://127.0.0.1:8080/api/v1/clientes -Headers $auth         # 5 clientes de los datos semilla
 ```
 
 (`-SkipHttpErrorCheck` requiere PowerShell 7; en Windows PowerShell 5.1 la petición sin token muestra el error 401.) Cómo funcionan los tokens: [Autenticación y seguridad (JWT)](#autenticación-y-seguridad-jwt). La referencia completa de endpoints está en [`docs/endpoints.md`](docs/endpoints.md).
@@ -190,9 +210,12 @@ polimarket-api/
 │   ├── application-dev.properties    PostgreSQL en Docker
 │   ├── application-test.properties   Pruebas sin base de datos
 │   ├── application-prod.properties   Variables de entorno de producción
-│   └── db/migration/                 Migraciones Flyway (V1 esquema de negocio, V2 seguridad)
+│   ├── db/migration/                 Migraciones Flyway (V1 esquema de negocio, V2 seguridad)
+│   └── db/seed/                      Datos semilla (R__datos_semilla.sql, solo perfil dev)
 ├── src/test/java/com/polimarket/api/   Pruebas unitarias e integración
 ├── docs/endpoints.md                   Referencia de endpoints REST
+├── docs/peticiones-api.md              Guía de las 68 peticiones de prueba con resultados esperados
+├── docs/postman/                       Colección de Postman (login, tokens y todos los endpoints)
 ├── build.gradle · settings.gradle · gradle.properties · lombok.config
 ├── gradlew · gradlew.bat
 ├── compose.yaml · .env.example · .gitignore
@@ -201,7 +224,7 @@ polimarket-api/
 
 ## Variables de entorno
 
-Las credenciales nunca se versionan. El archivo `.env` (ignorado por Git) es el único lugar donde se guarda la contraseña local y lo usan **ambos** procesos:
+Las credenciales nunca se versionan. Los integrantes del equipo reciben el `.env` y la carpeta `secrets/` en el paquete privado `polimarket-api-config-local.zip` ([paso 3](#3-copiar-los-archivos-de-configuración-que-no-están-en-el-repositorio)). El archivo `.env` (ignorado por Git) es el único lugar donde se guarda la contraseña local y lo usan **ambos** procesos:
 
 - **Docker Compose** lo carga automáticamente desde la raíz del proyecto.
 - **Spring Boot (perfil `dev`)** lo importa con `spring.config.import=optional:file:.env[.properties]`, relativo al directorio de trabajo (raíz del proyecto en IntelliJ y en `bootRun`). Las variables de entorno del sistema tienen prioridad sobre `.env`.
@@ -272,6 +295,7 @@ Pruebas incluidas:
 - `PolimarketApiApplicationTests`: el contexto completo (servicios incluidos) arranca con el perfil `test` sin base de datos; los repositorios se simulan con `@MockitoBean`.
 - `service/impl/**/*ServiceImplTest`: pruebas unitarias Mockito de los 11 servicios de negocio (Clientes, RRHH, Bodega, Proveedores, Ventas, Entregas).
 - `PostgresConnectionIT` (`@Tag("integration")`): `SELECT 1` contra `polimarket_db` y petición HTTP real al endpoint.
+- `service/DatosSemillaIT` (`@Tag("integration")`): aplica las migraciones **y** los datos semilla sobre un PostgreSQL efímero y verifica conteos, reglas de negocio (vendedor revocado, inventarios bajo el mínimo, totales de venta), que se puede operar sobre ellos y que el script es idempotente.
 - `repository/**/*RepositoryIT` (`@Tag("integration")`): `@DataJpaTest` contra un PostgreSQL 18.7 **efímero** levantado con Testcontainers (no usa `polimarket_db`), con el esquema creado por las migraciones Flyway y validado contra las entidades; valida las consultas derivadas y JPQL de los 15 repositorios.
 - `service/ServiceLayerIT` (`@Tag("integration")`): flujos reales contra PostgreSQL efímero: venta → entrega → confirmación descuenta stock una sola vez, reversión atómica por stock insuficiente, confirmaciones concurrentes, recepción de compras y vendedor revocado.
 
@@ -338,7 +362,7 @@ Sin token o con token inválido/expirado: `401` (`urn:polimarket:error:no-autent
 - **`dev` y `test`**: si no se configuran llaves, la API genera un par **efímero** en memoria al arrancar (aparece un `WARN`). Funciona, pero los tokens emitidos dejan de ser válidos al reiniciar la API.
 - **`prod`**: las llaves son **obligatorias**; si faltan, la aplicación no arranca.
 
-Para usar llaves persistentes (recomendado también en dev si no quiere volver a iniciar sesión tras cada reinicio), genérelas con OpenSSL (incluido con Git para Windows) en la carpeta `secrets/`, que está excluida de Git:
+El equipo ya recibió un par de llaves persistentes en `secrets/` dentro del paquete compartido ([paso 3](#3-copiar-los-archivos-de-configuración-que-no-están-en-el-repositorio)). Para generar un par propio (recomendado también en dev si no quiere volver a iniciar sesión tras cada reinicio), genérelas con OpenSSL (incluido con Git para Windows) en la carpeta `secrets/`, que está excluida de Git:
 
 ```powershell
 New-Item -ItemType Directory -Force secrets | Out-Null

@@ -70,6 +70,7 @@ dto/{clientes,ventas,rrhh,bodega,proveedores,entregas,autenticacion}/
 - Tipos del modelo UML: usar **`double`** para precios y totales, e **`int`** para identificadores y cantidades definidos en el modelo.
 - Entidades JPA con Lombok: usar `@Getter`, `@Setter`, `@NoArgsConstructor` (y `@AllArgsConstructor`/`@Builder` solo cuando aporte). **No** usar `@Data`, `@EqualsAndHashCode` ni `@ToString` sobre entidades; excluir relaciones de `toString`, y definir `equals`/`hashCode` basados en el identificador si son necesarios. Relaciones `LAZY` por defecto.
 - El esquema de base de datos lo gestiona **Flyway** (`src/main/resources/db/migration`, `V{n}__descripcion.sql`); Hibernate solo valida (`spring.jpa.hibernate.ddl-auto=validate`). Nunca modificar una migración ya aplicada: crear una nueva.
+- Datos semilla en `src/main/resources/db/seed/R__datos_semilla.sql` (migración repetible de Flyway, cargada **solo en el perfil `dev`** vía `spring.flyway.locations`): IDs explícitos, `ON CONFLICT DO NOTHING` y ajuste de secuencias con `setval`; deben ser idempotentes, coherentes con las reglas de negocio (verificado por `DatosSemillaIT`) y nunca incluir usuarios ni contraseñas.
 - Registrar logs con SLF4J (`@Slf4j`). No registrar credenciales ni datos sensibles.
 - Configuración en archivos `application*.properties` (no YAML).
 - Credenciales siempre mediante variables de entorno o `.env` local (no versionado).
