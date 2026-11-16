@@ -13,6 +13,8 @@ import com.polimarket.api.entity.Inventario;
 import com.polimarket.api.entity.MovimientoStock;
 import com.polimarket.api.entity.Producto;
 import com.polimarket.api.entity.Proveedor;
+import com.polimarket.api.entity.RefreshToken;
+import com.polimarket.api.entity.Usuario;
 import com.polimarket.api.entity.Vendedor;
 import com.polimarket.api.entity.Venta;
 import java.util.Map;
@@ -22,7 +24,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.data.repository.support.Repositories;
 
 /**
- * Verifica que Spring Data JPA detecte los 13 repositorios, cada uno en su subpaquete
+ * Verifica que Spring Data JPA detecte los 15 repositorios, cada uno en su subpaquete
  * funcional y con el tipo de identificador real de su entidad.
  */
 class RepositoryRegistrationIT extends AbstractRepositoryIT {
@@ -33,7 +35,7 @@ class RepositoryRegistrationIT extends AbstractRepositoryIT {
     private ApplicationContext context;
 
     @Test
-    void registraLos13RepositoriosConSuPaqueteEIdentificador() {
+    void registraLos15RepositoriosConSuPaqueteEIdentificador() {
         Repositories repositories = new Repositories(context);
         Map<Class<?>, Object[]> esperado = Map.ofEntries(
                 Map.entry(Cliente.class, new Object[] {"clientes", Integer.class}),
@@ -48,9 +50,11 @@ class RepositoryRegistrationIT extends AbstractRepositoryIT {
                 Map.entry(Proveedor.class, new Object[] {"proveedores", String.class}),
                 Map.entry(CompraProveedor.class, new Object[] {"proveedores", Integer.class}),
                 Map.entry(DetalleCompra.class, new Object[] {"proveedores", Integer.class}),
-                Map.entry(Entrega.class, new Object[] {"entregas", Integer.class}));
+                Map.entry(Entrega.class, new Object[] {"entregas", Integer.class}),
+                Map.entry(Usuario.class, new Object[] {"autenticacion", Integer.class}),
+                Map.entry(RefreshToken.class, new Object[] {"autenticacion", Long.class}));
 
-        assertThat(repositories).hasSize(13);
+        assertThat(repositories).hasSize(15);
         esperado.forEach((entidad, datos) -> {
             var info = repositories.getRepositoryInformationFor(entidad).orElseThrow();
             assertThat(info.getRepositoryInterface().getPackageName()).isEqualTo(BASE + datos[0]);

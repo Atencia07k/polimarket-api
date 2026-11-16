@@ -1,5 +1,7 @@
 package com.polimarket.api;
 
+import com.polimarket.api.repository.autenticacion.RefreshTokenRepository;
+import com.polimarket.api.repository.autenticacion.UsuarioRepository;
 import com.polimarket.api.repository.bodega.BodegaRepository;
 import com.polimarket.api.repository.bodega.InventarioRepository;
 import com.polimarket.api.repository.bodega.MovimientoStockRepository;
@@ -29,7 +31,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
         ProductoRepository.class, ClienteRepository.class, EntregaRepository.class,
         CompraProveedorRepository.class, DetalleCompraRepository.class, ProveedorRepository.class,
         AutorizacionRRHHRepository.class, VendedorRepository.class, DetalleVentaRepository.class,
-        VentaRepository.class})
+        VentaRepository.class, UsuarioRepository.class, RefreshTokenRepository.class})
 class PolimarketApiApplicationTests {
 
     @Test

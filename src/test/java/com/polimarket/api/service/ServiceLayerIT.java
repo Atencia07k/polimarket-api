@@ -52,7 +52,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * Nunca toca la base de desarrollo polimarket_db.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+        properties = {"spring.jpa.hibernate.ddl-auto=validate", "polimarket.jwt.ephemeral-keys-allowed=true"})
 @Import(PostgresTestcontainersConfiguration.class)
 @Tag("integration")
 class ServiceLayerIT {
