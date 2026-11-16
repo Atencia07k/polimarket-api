@@ -395,3 +395,6 @@ Nunca versione `secrets/`, `*.pem` ni `.env` (ya están en `.gitignore`). Si una
 | Docker no responde | Iniciar Docker Desktop y verificar con `docker version`. |
 | Errores de Lombok en IntelliJ | Activar *Annotation Processing* y recargar el proyecto Gradle. |
 | Bloqueos de archivos en `build/` | El proyecto está en OneDrive: pausar la sincronización durante la compilación si aparecen errores de acceso. |
+## Clientes Flutter y Python
+
+Consultar [instrucciones y demostraci�n de los cinco requisitos](clients/README.md).

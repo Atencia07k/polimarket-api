@@ -66,3 +66,8 @@ desktop.ini
 *.log
 logs/
 HELP.md
+# Clientes
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+**/local.properties
+**/__pycache__/
