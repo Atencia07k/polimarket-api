@@ -23,13 +23,13 @@ import org.springframework.context.annotation.Import;
 
 /**
  * Base de las pruebas de repositorios: PostgreSQL real en Testcontainers, esquema creado
- * desde las entidades (create-drop) y rollback automatico al final de cada prueba.
+ * por las migraciones Flyway y validado contra las entidades (validate), con rollback automatico al final de cada prueba.
  * Requiere Docker en ejecucion; por eso se etiqueta como integration.
  * <p>
  * Los ayudantes respetan las validaciones de las entidades: un producto tiene al menos
  * un proveedor y una venta o compra tiene al menos un detalle.
  */
-@DataJpaTest(showSql = false, properties = "spring.jpa.hibernate.ddl-auto=create-drop")
+@DataJpaTest(showSql = false, properties = "spring.jpa.hibernate.ddl-auto=validate")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(PostgresTestcontainersConfiguration.class)
 @Tag("integration")

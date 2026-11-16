@@ -11,6 +11,7 @@ import com.polimarket.api.entity.Cliente;
 import com.polimarket.api.entity.Inventario;
 import com.polimarket.api.entity.Producto;
 import com.polimarket.api.entity.Proveedor;
+import com.polimarket.api.entity.Rol;
 import com.polimarket.api.entity.Vendedor;
 import com.polimarket.api.repository.PostgresTestcontainersConfiguration;
 import com.polimarket.api.repository.bodega.BodegaRepository;
@@ -19,6 +20,7 @@ import com.polimarket.api.repository.bodega.ProductoRepository;
 import com.polimarket.api.repository.clientes.ClienteRepository;
 import com.polimarket.api.repository.proveedores.ProveedorRepository;
 import com.polimarket.api.repository.rrhh.VendedorRepository;
+import com.polimarket.api.service.autenticacion.UsuarioService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -27,6 +29,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -36,11 +39,11 @@ import org.springframework.web.client.RestClient;
 
 /**
  * Flujos completos por HTTP real (Tomcat en puerto aleatorio) contra PostgreSQL efimero en Testcontainers.
- * Usa el perfil test (seguridad publica temporal) y verifica que lo persistido coincide con lo respondido.
- * Nunca toca la base de desarrollo polimarket_db.
+ * El esquema lo crean las migraciones Flyway y cada peticion lleva un access token obtenido con un login real.
+ * Verifica que lo persistido coincide con lo respondido. Nunca toca la base de desarrollo polimarket_db.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.jpa.hibernate.ddl-auto=validate",
         "spring.autoconfigure.exclude="
 })
 @Import(PostgresTestcontainersConfiguration.class)
@@ -58,8 +61,12 @@ class ControllerHttpIT {
     @Autowired private BodegaRepository bodegaRepository;
     @Autowired private InventarioRepository inventarioRepository;
     @Autowired private JdbcTemplate jdbc;
+    @Autowired private UsuarioService usuarioService;
+
+    private static final String CLAVE = "Clave.Segura1";
 
     private RestClient http;
+    private String tokenAdmin;
     private Integer vendedor;
     private Integer vendedorSinAutorizar;
     private Integer cliente;
@@ -84,15 +91,33 @@ class ControllerHttpIT {
         bodega = principal.getId();
         inventarioRepository.save(Inventario.builder().bodega(principal)
                 .producto(productoRepository.getReferenceById(arroz)).stock(10).stockMinimo(2).build());
+        usuarioService.crearUsuario("admin", CLAVE, Rol.ADMIN);
+        usuarioService.crearUsuario("vendedor1", CLAVE, Rol.VENDEDOR);
+        tokenAdmin = leer(login("admin", CLAVE), "$.accessToken");
     }
 
     @AfterEach
     void limpiar() {
-        jdbc.execute("TRUNCATE vendedor, cliente, proveedor, producto, bodega RESTART IDENTITY CASCADE");
+        jdbc.execute("TRUNCATE vendedor, cliente, proveedor, producto, bodega, usuario, refresh_token "
+                + "RESTART IDENTITY CASCADE");
+    }
+
+    private ResponseEntity<String> login(String username, String password) {
+        ResponseEntity<String> respuesta = enviarCon(null, HttpMethod.POST, "/auth/login",
+                "{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}");
+        assertEquals(200, respuesta.getStatusCode().value(), respuesta.getBody());
+        return respuesta;
     }
 
     private ResponseEntity<String> enviar(HttpMethod metodo, String ruta, String json) {
+        return enviarCon(tokenAdmin, metodo, ruta, json);
+    }
+
+    private ResponseEntity<String> enviarCon(String token, HttpMethod metodo, String ruta, String json) {
         RestClient.RequestBodySpec solicitud = http.method(metodo).uri(ruta).accept(MediaType.APPLICATION_JSON);
+        if (token != null) {
+            solicitud.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        }
         if (json != null) {
             solicitud.contentType(MediaType.APPLICATION_JSON).body(json);
         }
@@ -253,7 +278,7 @@ class ControllerHttpIT {
     }
 
     @Test
-    void consultasPublicasDevuelvenDatosPersistidos() {
+    void consultasAutenticadasDevuelvenDatosPersistidos() {
         ResponseEntity<String> productos = enviar(HttpMethod.GET, "/productos", null);
         assertEquals(200, productos.getStatusCode().value());
         assertEquals("900", leer(productos, "$[0].nitsProveedores[0]"));
@@ -265,5 +290,79 @@ class ControllerHttpIT {
 
         assertEquals(200, enviar(HttpMethod.GET, "/proveedores/900", null).getStatusCode().value());
         assertEquals(200, enviar(HttpMethod.GET, "/bodegas/" + bodega + "/inventarios", null).getStatusCode().value());
+    }
+
+    @Test
+    void flujoCompletoDeAutenticacionConRotacionYDeteccionDeReutilizacion() {
+        assertEquals(401, enviarCon(null, HttpMethod.GET, "/productos", null).getStatusCode().value());
+        assertEquals(401, enviarCon("token-falso", HttpMethod.GET, "/productos", null).getStatusCode().value());
+        assertEquals(401, enviarCon(null, HttpMethod.POST, "/auth/login",
+                "{\"username\":\"admin\",\"password\":\"incorrecta\"}").getStatusCode().value());
+
+        ResponseEntity<String> sesion = login("Vendedor1", CLAVE);
+        String access = leer(sesion, "$.accessToken");
+        String refresh1 = leer(sesion, "$.refreshToken");
+        assertEquals("Bearer", leer(sesion, "$.tokenType"));
+        assertEquals(900, (Integer) leer(sesion, "$.expiresIn"));
+        assertFalse(contarRefreshConValor(refresh1), "el refresh token se guarda solo como hash");
+
+        ResponseEntity<String> yo = enviarCon(access, HttpMethod.GET, "/auth/me", null);
+        assertEquals(200, yo.getStatusCode().value());
+        assertEquals("vendedor1", leer(yo, "$.username"));
+        assertEquals("VENDEDOR", leer(yo, "$.rol"));
+
+        ResponseEntity<String> rotado = enviarCon(null, HttpMethod.POST, "/auth/refresh",
+                "{\"refreshToken\":\"" + refresh1 + "\"}");
+        assertEquals(200, rotado.getStatusCode().value());
+        String refresh2 = leer(rotado, "$.refreshToken");
+        assertEquals(200, enviarCon((String) leer(rotado, "$.accessToken"), HttpMethod.GET, "/productos", null)
+                .getStatusCode().value());
+
+        // Reutilizar refresh1 (ya rotado) se trata como robo: se revoca toda la familia, incluido refresh2
+        assertEquals(401, enviarCon(null, HttpMethod.POST, "/auth/refresh",
+                "{\"refreshToken\":\"" + refresh1 + "\"}").getStatusCode().value());
+        assertEquals(401, enviarCon(null, HttpMethod.POST, "/auth/refresh",
+                "{\"refreshToken\":\"" + refresh2 + "\"}").getStatusCode().value());
+
+        String refresh3 = leer(login("vendedor1", CLAVE), "$.refreshToken");
+        assertEquals(204, enviarCon(null, HttpMethod.POST, "/auth/logout",
+                "{\"refreshToken\":\"" + refresh3 + "\"}").getStatusCode().value());
+        assertEquals(401, enviarCon(null, HttpMethod.POST, "/auth/refresh",
+                "{\"refreshToken\":\"" + refresh3 + "\"}").getStatusCode().value());
+    }
+
+    @Test
+    void vendedorSoloAccedeASusOperacionesYAdminGestionaUsuarios() {
+        String tokenVendedor = leer(login("vendedor1", CLAVE), "$.accessToken");
+
+        assertEquals(200, enviarCon(tokenVendedor, HttpMethod.GET, "/productos", null).getStatusCode().value());
+        ResponseEntity<String> prohibido = enviarCon(tokenVendedor, HttpMethod.POST, "/clientes",
+                "{\"nombre\":\"Eva\",\"direccion\":\"Calle 2\"}");
+        assertEquals(403, prohibido.getStatusCode().value());
+        assertEquals("urn:polimarket:error:acceso-denegado", leer(prohibido, "$.type"));
+        assertEquals(403, enviarCon(tokenVendedor, HttpMethod.GET, "/usuarios", null).getStatusCode().value());
+
+        ResponseEntity<String> creado = enviar(HttpMethod.POST, "/usuarios",
+                "{\"username\":\"vendedor2\",\"password\":\"" + CLAVE + "\",\"rol\":\"VENDEDOR\"}");
+        assertEquals(201, creado.getStatusCode().value());
+        assertFalse(creado.getBody().contains("password"), creado.getBody());
+        assertTrue(jdbc.queryForObject("SELECT password_hash FROM usuario WHERE username = 'vendedor2'",
+                String.class).startsWith("{bcrypt}"));
+        assertEquals(409, enviar(HttpMethod.POST, "/usuarios",
+                "{\"username\":\"VENDEDOR2\",\"password\":\"" + CLAVE + "\",\"rol\":\"VENDEDOR\"}")
+                .getStatusCode().value());
+
+        String refreshVendedor = leer(login("vendedor1", CLAVE), "$.refreshToken");
+        Integer idVendedor1 = jdbc.queryForObject("SELECT id FROM usuario WHERE username = 'vendedor1'", Integer.class);
+        assertEquals(200, enviar(HttpMethod.PATCH, "/usuarios/" + idVendedor1 + "/desactivacion", null)
+                .getStatusCode().value());
+        assertEquals(401, enviarCon(null, HttpMethod.POST, "/auth/login",
+                "{\"username\":\"vendedor1\",\"password\":\"" + CLAVE + "\"}").getStatusCode().value());
+        assertEquals(401, enviarCon(null, HttpMethod.POST, "/auth/refresh",
+                "{\"refreshToken\":\"" + refreshVendedor + "\"}").getStatusCode().value());
+    }
+
+    private boolean contarRefreshConValor(String valor) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM refresh_token WHERE token_hash = ?", Integer.class, valor) > 0;
     }
 }

@@ -7,7 +7,6 @@ import com.polimarket.api.exception.InventarioInsuficienteException;
 import com.polimarket.api.exception.OperacionNoPermitidaException;
 import com.polimarket.api.exception.RecursoNoEncontradoException;
 import com.polimarket.api.exception.VendedorNoAutorizadoException;
-import com.polimarket.api.security.DevSecurityConfig;
 import com.polimarket.api.security.SecurityConfig;
 import java.time.LocalDate;
 import java.util.List;
@@ -16,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -43,7 +43,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SuppressWarnings("unused")
 @WebMvcTest(VentaController.class)
-@Import({DevSecurityConfig.class, SecurityConfig.class})
+@Import(SecurityConfig.class)
+@WithMockUser(roles = "ADMIN")
 @ActiveProfiles("test")
 class VentaControllerWebMvcTest {
 

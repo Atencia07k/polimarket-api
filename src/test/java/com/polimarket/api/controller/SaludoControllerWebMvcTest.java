@@ -1,7 +1,6 @@
 package com.polimarket.api.controller;
 
 import com.polimarket.api.dto.SaludoResponse;
-import com.polimarket.api.security.DevSecurityConfig;
 import com.polimarket.api.security.SecurityConfig;
 import com.polimarket.api.service.SaludoService;
 import org.junit.jupiter.api.Test;
@@ -20,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(SaludoController.class)
-@Import({DevSecurityConfig.class, SecurityConfig.class})
+@Import(SecurityConfig.class)
 @ActiveProfiles("test")
 class SaludoControllerWebMvcTest {
 

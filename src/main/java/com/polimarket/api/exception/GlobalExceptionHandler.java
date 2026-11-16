@@ -70,7 +70,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 "El registro esta siendo modificado por otra operacion; intente de nuevo", "conflicto-concurrencia");
     }
 
-    // Soporte para la etapa de seguridad JWT: no convertir 401/403 en 500.
+    @ExceptionHandler(AutenticacionFallidaException.class)
+    ResponseEntity<ProblemDetail> autenticacionFallida(AutenticacionFallidaException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
+                .body(problema(HttpStatus.UNAUTHORIZED, "Autenticacion fallida", ex.getMessage(),
+                        "autenticacion-fallida"));
+    }
+
+    // Respaldo: la cadena de seguridad responde 401/403 antes de llegar aqui; nunca convertirlos en 500.
     @ExceptionHandler(AuthenticationException.class)
     ProblemDetail noAutenticado(AuthenticationException ex) {
         return problema(HttpStatus.UNAUTHORIZED, "No autenticado", "Se requiere autenticacion", "no-autenticado");
